@@ -1,4 +1,5 @@
-import std/[strutils, re]
+import std/[strutils, re, json]
+
 
 var variableCharacters = re"[a-zA-Z]"
 
@@ -10,6 +11,8 @@ var keywords = [
 
 type
     TokenType = enum
+        rootProgram,
+        blockNodeDef,
         leftBracket,
         rightBracket,
         identifier,
@@ -178,11 +181,76 @@ proc characterAnalyse(line: string) =
                             id = ""
 
 
+type
+    NodeRef = ref Node
+    Node = object
+        value: string
+        valueType: string
+        nodeType: TokenType
+        params: seq[NodeRef]
+        children: seq[NodeRef]
 
+proc printAST(ast: NodeRef) =
+    echo %*ast    
 
+proc constructAST() =
+    var program: NodeRef
+    new(program)
+    program.nodeType = rootProgram
 
+    var nodeStack:seq[NodeRef]
+    var paramMode = false 
+    nodeStack.add(program)
 
+    for i, tok in tokens:
+        case tok.tokenType:
+            of loopDef:
+                var loopNode: NodeRef
+                new(loopNode)
+                loopNode.nodeType = loopDef
+                nodeStack[nodeStack.high].children.add(loopNode)
+                nodeStack.add(loopNode)
+            of printDef:
+                var printNode: NodeRef
+                new(printNode)
+                printNode.nodeType = printDef
+                nodeStack[nodeStack.high].children.add(printNode)
+                nodeStack.add(printNode)
+            of leftBracket:
+                if tok.value == "(":
+                    paramMode = true
+                elif tok.value == "{":
+                    var blockNode: NodeRef
+                    new(blockNode)
+                    blockNode.nodeType = blockNodeDef
+                    nodeStack[nodeStack.high].children.add(blockNode)
+                    nodeStack.add(blockNode)
+            of rightBracket:
+                if tok.value == ")":
+                    paramMode = false
+                if tok.value == "}":
+                    discard nodeStack.pop()
+                discard nodeStack.pop()
 
+            of identifier, stringLiteral:
+                var idNode: NodeRef
+                new(idNode)
+
+                idNode.nodeType = tok.tokenType
+
+                if tok.tokenType == stringLiteral:
+                    idNode.value = tok.value
+                    idNode.valueType = "string"
+
+                if paramMode:
+                    nodeStack[nodeStack.high].params.add(idNode)
+                else:
+                    nodeStack[nodeStack.high].children.add(idNode)
+            else:
+                continue
+                # echo "dancing"
+
+    printAST(program)
 
 
 proc main() =
@@ -199,7 +267,6 @@ proc main() =
         else:
             characterAnalyse(line)
 
-    for tok in tokens:
-        echo tok
+    constructAST()
 
 main()

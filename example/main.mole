@@ -21,14 +21,10 @@
 -- =====================
 -- funcName()
 
-loop { 
-    print("hello, world, we inside a loop")
+loop {
+    print("string")   
+    print("Yo")
 }
 
-print("hello, world")
-
-def funcName(){
-    print("from inside a function")
-}
-
-name := "reaper"
+print("outer block")
+print("another print")
