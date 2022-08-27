@@ -21,10 +21,14 @@
 -- =====================
 -- funcName()
 
-name := "value"
-
-loop { }
-
-def print() {
-
+loop { 
+    print("hello, world, we inside a loop")
 }
+
+print("hello, world")
+
+def funcName(){
+    print("from inside a function")
+}
+
+name := "reaper"
