@@ -1,0 +1,30 @@
+-- WIP Spec 
+-- =====================
+-- Comments 
+-- basically using `--`
+-- =====================
+-- variable declaration / only one way and it's mutable
+-- =====================
+-- name := value 
+-- =====================
+-- loops 
+-- =====================
+-- loop {}
+-- =====================
+-- function def
+-- =====================
+-- def funcName(){
+--  -- function body   
+-- }
+-- =====================
+-- function exec
+-- =====================
+-- funcName()
+
+name := "value"
+
+loop { }
+
+def print() {
+
+}
