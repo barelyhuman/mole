@@ -1,35 +1,52 @@
-import std/[strutils, re, json]
+import std/[strutils, re]
 
 
-var variableCharacters = re"[a-zA-Z]"
+var variableCharacters = re"^[a-zA-Z]"
 
 var keywords = [
     "def",
     "loop",
-    "print"
+    "print",
+    "true",
+    "false"
 ]
 
 type
     TokenType = enum
         rootProgram,
         blockNodeDef,
+        paramBlockNodeDef,
+        varDefinitionNodeDef,
         leftBracket,
         rightBracket,
         identifier,
         literal,
+        boolLiteral,
+        numberLiteral
         stringLiteral,
         funcDef,
         varDef,
+        funcIdentifierDef,
         loopDef,
         printDef,
     Token = object
         value: string
         tokenType: TokenType
+    NodeRef = ref Node
+    Node = object
+        id: NodeRef
+        parent: NodeRef
+        value: string
+        valueType: string
+        nodeType: TokenType
+        params: seq[NodeRef]
+        children: seq[NodeRef]
 
 var tokens: seq[Token]
 var
     id = ""
     strLiteral = ""
+    numLiteral = ""
     stringStack: seq[string]
     bracesStack: seq[string]
     flowerStack: seq[string]
@@ -67,6 +84,13 @@ proc handleKeywordIdentifiers(identifier: string) =
                     tokenType: funcDef
                 )
             )
+        of "true","false":
+            tokens.add(
+                Token(
+                    value: identifier,
+                    tokenType: boolLiteral
+                )
+            )
         else:
             return
 
@@ -77,6 +101,14 @@ proc characterAnalyse(line: string) =
     for i, chr in line:
         debug $chr
         case chr:
+            of '+':
+                tokens.add(
+                        Token(
+                            value: numLiteral,
+                            tokenType: numberLiteral
+                    )
+                )
+                numLiteral = ""
             of '"':
                 debug "found string declaration"
                 if stringStack.len > 0:
@@ -144,13 +176,13 @@ proc characterAnalyse(line: string) =
                         )
                     )
             else:
-
                 # possibly inside a string, let it take up
                 # everything till the end of string
                 if stringStack.len > 0:
                     strLiteral = strLiteral & $chr
                     debug "strLiteral:" & strLiteral
-
+                elif match($chr, re"\d"):
+                    numLiteral = numLiteral & $chr
                 # if not then check if it's a variable that's
                 # being used, mark as an identifier
                 elif match($chr, variableCharacters):
@@ -181,71 +213,138 @@ proc characterAnalyse(line: string) =
                             id = ""
 
 
-type
-    NodeRef = ref Node
-    Node = object
-        value: string
-        valueType: string
-        nodeType: TokenType
-        params: seq[NodeRef]
-        children: seq[NodeRef]
 
-proc printAST(ast: NodeRef) =
-    echo %*ast    
+
+
+proc printAST(ast: NodeRef, prefix: string = "-") =
+    var printable = ""
+    printable = printable & prefix & " " & $ast.nodeType
+    if len(ast.value) > 0:
+        printable = printable & " : " & ast.value
+    echo printable
+    for child in ast.children:
+        printAST(child, prefix & "-")
 
 proc constructAST() =
     var program: NodeRef
     new(program)
     program.nodeType = rootProgram
 
-    var nodeStack:seq[NodeRef]
-    var paramMode = false 
+    var nodeStack: seq[NodeRef]
     nodeStack.add(program)
 
     for i, tok in tokens:
         case tok.tokenType:
+            of leftBracket:
+                var blockNode: NodeRef
+                new(blockNode)
+
+                if tok.value == "(":
+                    blockNode.nodeType = paramBlockNodeDef
+                if tok.value == "{":
+                    blockNode.nodeType = blockNodeDef
+
+                blockNode.parent = nodeStack[nodeStack.high]
+                blockNode.parent.children.add(blockNode)
+                nodeStack.add(blockNode)
+
+            of rightBracket:
+                discard nodeStack.pop()
+                discard nodeStack.pop()
+
             of loopDef:
                 var loopNode: NodeRef
                 new(loopNode)
                 loopNode.nodeType = loopDef
-                nodeStack[nodeStack.high].children.add(loopNode)
+                loopNode.parent = nodeStack[nodeStack.high]
+                loopNode.parent.children.add(
+                    loopNode
+                )
                 nodeStack.add(loopNode)
             of printDef:
                 var printNode: NodeRef
                 new(printNode)
                 printNode.nodeType = printDef
-                nodeStack[nodeStack.high].children.add(printNode)
+                printNode.parent = nodeStack[nodeStack.high]
+                printNode.parent.children.add(
+                    printNode
+                )
                 nodeStack.add(printNode)
-            of leftBracket:
-                if tok.value == "(":
-                    paramMode = true
-                elif tok.value == "{":
-                    var blockNode: NodeRef
-                    new(blockNode)
-                    blockNode.nodeType = blockNodeDef
-                    nodeStack[nodeStack.high].children.add(blockNode)
-                    nodeStack.add(blockNode)
-            of rightBracket:
-                if tok.value == ")":
-                    paramMode = false
-                if tok.value == "}":
-                    discard nodeStack.pop()
-                discard nodeStack.pop()
+            of funcDef:
+                var funcNode: NodeRef
+                new(funcNode)
+                funcNode.nodeType = funcDef
+                funcNode.parent = nodeStack[nodeStack.high]
+                funcNode.parent.children.add(
+                    funcNode
+                )
+                nodeStack.add(funcNode)
+            of varDef:
+                var varDefNode: NodeRef
+                new(varDefNode)
+                varDefNode.nodeType = varDef
+                varDefNode.parent = nodeStack[nodeStack.high]
+                varDefNode.parent.children.add(
+                    varDefNode
+                )
+                nodeStack.add(varDefNode)
 
-            of identifier, stringLiteral:
+                var varDefinitionNode: NodeRef
+                new(varDefinitionNode)
+                varDefinitionNode.nodeType = varDefinitionNodeDef
+                varDefinitionNode.parent = nodeStack[nodeStack.high]
+                varDefinitionNode.parent.children.add(
+                    varDefinitionNode
+                )
+                nodeStack.add(varDefinitionNode)
+            of identifier:
                 var idNode: NodeRef
                 new(idNode)
+                idNode.nodeType = identifier
+                idNode.value = tok.value
+                idNode.parent = nodeStack[nodeStack.high]
 
-                idNode.nodeType = tok.tokenType
+                if idNode.parent.nodeType == funcDef:
+                    idNode.nodeType = funcIdentifierDef
 
-                if tok.tokenType == stringLiteral:
-                    idNode.value = tok.value
-                    idNode.valueType = "string"
+                idNode.parent.children.add(
+                    idNode
+                )
 
-                if paramMode:
-                    nodeStack[nodeStack.high].params.add(idNode)
-                else:
-                    nodeStack[nodeStack.high].children.add(idNode)
+            of stringLiteral:
+                var sLiteralNode: NodeRef
+                new(sLiteralNode)
+                sLiteralNode.nodeType = stringLiteral
+                sLiteralNode.value = tok.value
+                sLiteralNode.parent = nodeStack[nodeStack.high]
+
+                if sLiteralNode.parent.nodeType == varDef:
+                    discard nodeStack.pop()
+                if sLiteralNode.parent.nodeType == varDefinitionNodeDef:
+                    discard nodeStack.pop()
+                    discard nodeStack.pop()
+
+                sLiteralNode.parent.children.add(
+                    sLiteralNode
+                )
+            of numberLiteral:
+                var nLiteralNode: NodeRef
+                new(nLiteralNode)
+                nLiteralNode.nodeType = numberLiteral
+                nLiteralNode.value = tok.value
+                nLiteralNode.parent = nodeStack[nodeStack.high]
+                nLiteralNode.parent.children.add(
+                    nLiteralNode
+                )
+            of boolLiteral:
+                var boolLiteralNode: NodeRef
+                new(boolLiteralNode)
+                boolLiteralNode.nodeType = boolLiteral
+                boolLiteralNode.value = tok.value
+                boolLiteralNode.parent = nodeStack[nodeStack.high]
+                boolLiteralNode.parent.children.add(
+                    boolLiteralNode
+                )
             else:
                 continue
                 # echo "dancing"
@@ -266,6 +365,25 @@ proc main() =
             continue
         else:
             characterAnalyse(line)
+
+    if len(strLiteral) > 0:
+        tokens.add(
+            Token(
+                    value: strLiteral,
+                    tokenType: stringLiteral
+            )
+
+        )
+        strLiteral = ""
+
+    if len(numLiteral) > 0:
+        tokens.add(
+            Token(
+                    value: numLiteral,
+                    tokenType: numberLiteral
+            )
+        )
+        numLiteral = ""
 
     constructAST()
 
