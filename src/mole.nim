@@ -8,7 +8,8 @@ var keywords = [
     "loop",
     "print",
     "true",
-    "false"
+    "false",
+    "return"
 ]
 
 type
@@ -29,6 +30,8 @@ type
         funcIdentifierDef,
         loopDef,
         printDef,
+        operator,
+        returnBlock
     Token = object
         value: string
         tokenType: TokenType
@@ -91,6 +94,13 @@ proc handleKeywordIdentifiers(identifier: string) =
                     tokenType: boolLiteral
                 )
             )
+        of "return":
+            tokens.add(
+                Token(
+                    value: "",
+                    tokenType: returnBlock
+                )
+            )
         else:
             return
 
@@ -99,16 +109,14 @@ proc characterAnalyse(line: string) =
         return
 
     for i, chr in line:
-        debug $chr
         case chr:
-            of '+':
-                tokens.add(
+            of '+','-','/','*','%':
+                 tokens.add(
                         Token(
-                            value: numLiteral,
-                            tokenType: numberLiteral
+                            value: $chr,
+                            tokenType: operator
+                        )
                     )
-                )
-                numLiteral = ""
             of '"':
                 debug "found string declaration"
                 if stringStack.len > 0:
@@ -183,6 +191,23 @@ proc characterAnalyse(line: string) =
                     debug "strLiteral:" & strLiteral
                 elif match($chr, re"\d"):
                     numLiteral = numLiteral & $chr
+                    if i+1 > line.len-1:
+                        tokens.add(
+                                Token(
+                                    value: numLiteral,
+                                    tokenType: numberLiteral
+                                )
+                            )
+                        numLiteral = ""
+                    elif i+1 < line.len and not match($line[i+1], re"\d"):
+                        tokens.add(
+                                Token(
+                                    value: numLiteral,
+                                    tokenType: numberLiteral
+                                )
+                            )
+                        numLiteral = ""
+
                 # if not then check if it's a variable that's
                 # being used, mark as an identifier
                 elif match($chr, variableCharacters):
@@ -225,7 +250,7 @@ proc printAST(ast: NodeRef, prefix: string = "-") =
     for child in ast.children:
         printAST(child, prefix & "-")
 
-proc constructAST() =
+proc constructAST():NodeRef =
     var program: NodeRef
     new(program)
     program.nodeType = rootProgram
@@ -234,7 +259,21 @@ proc constructAST() =
     nodeStack.add(program)
 
     for i, tok in tokens:
+
+        # cases where a bracket might remove the root node as well
+        if nodeStack.len == 0:
+            nodeStack.add(program)
+
+
         case tok.tokenType:
+            of operator:
+                var operatorNode: NodeRef
+                new(operatorNode)
+                operatorNode.value = tok.value
+                operatorNode.nodeType = operator
+                operatorNode.parent = nodeStack[nodeStack.high]
+                operatorNode.parent.children.add(operatorNode)
+                nodeStack.add(operatorNode)
             of leftBracket:
                 var blockNode: NodeRef
                 new(blockNode)
@@ -261,6 +300,15 @@ proc constructAST() =
                     loopNode
                 )
                 nodeStack.add(loopNode)
+            of returnBlock:
+                var returnNode: NodeRef
+                new(returnNode)
+                returnNode.nodeType = returnBlock
+                returnNode.parent = nodeStack[nodeStack.high]
+                returnNode.parent.children.add(
+                    returnNode
+                )
+                nodeStack.add(returnNode)
             of printDef:
                 var printNode: NodeRef
                 new(printNode)
@@ -349,7 +397,63 @@ proc constructAST() =
                 continue
                 # echo "dancing"
 
-    printAST(program)
+    return program
+
+
+proc nodeToLanguage(ast:NodeRef):string=
+    var prog = ""
+    case ast.nodeType:
+        of operator:
+            prog = "("
+            for child in ast.children:
+                var paramAdditions:seq[string]
+                for paramChild in child.children:
+                    if paramChild.nodeType == operator:
+                        paramAdditions.add(nodeToLanguage(paramChild))
+                    else:    
+                        paramAdditions.add(paramChild.value)
+                prog = prog & paramAdditions.join(ast.value)
+            prog = prog & ")"
+        of identifier:
+            prog = ast.value
+        of numberLiteral:
+            prog = ast.value
+        of funcDef:
+            prog = "function "
+            for ch in ast.children:
+                prog = prog & nodeToLanguage(ch)
+        of blockNodeDef:
+            prog = "{"
+            for ch in ast.children:
+                prog = prog & nodeToLanguage(ch)
+            prog = prog & "}"
+        of paramBlockNodeDef:
+            prog = "("
+            var toAdd:seq[string] 
+            for ch in ast.children:
+                toAdd.add( nodeToLanguage(ch))
+            prog = prog & toAdd.join(",") &  ")"
+        of returnBlock:
+            prog = "return "
+            for ch in ast.children:
+                prog = prog & nodeToLanguage(ch)
+            prog = prog & ")"
+        of funcIdentifierDef:
+            prog = ast.value
+        else:
+            return prog        
+    return prog
+
+proc astToLanguage(ast:NodeRef):string=
+    var program = ""
+    
+    for child in ast.children:
+        program = program & nodeToLanguage(child)
+
+    
+    return program
+                
+
 
 
 proc main() =
@@ -365,26 +469,7 @@ proc main() =
             continue
         else:
             characterAnalyse(line)
-
-    if len(strLiteral) > 0:
-        tokens.add(
-            Token(
-                    value: strLiteral,
-                    tokenType: stringLiteral
-            )
-
-        )
-        strLiteral = ""
-
-    if len(numLiteral) > 0:
-        tokens.add(
-            Token(
-                    value: numLiteral,
-                    tokenType: numberLiteral
-            )
-        )
-        numLiteral = ""
-
-    constructAST()
+    var ast = constructAST()
+    echo astToLanguage(ast)
 
 main()
