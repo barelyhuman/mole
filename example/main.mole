@@ -1,3 +1,4 @@
-def add(a,b){
-    return +(a,b, -(a,b))
+fn greet(name){
+    print("hello",name)
+    return 1
 }

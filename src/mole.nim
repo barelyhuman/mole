@@ -1,10 +1,10 @@
-import std/[strutils, re]
+import std/[strutils, re, syncio]
 
 
 var variableCharacters = re"^[a-zA-Z]"
 
 var keywords = [
-    "def",
+    "fn",
     "loop",
     "print",
     "true",
@@ -80,7 +80,7 @@ proc handleKeywordIdentifiers(identifier: string) =
                     tokenType: printDef
                 )
             )
-        of "def":
+        of "fn":
             tokens.add(
                 Token(
                     value: id,
@@ -418,10 +418,17 @@ proc nodeToLanguage(ast:NodeRef):string=
             prog = ast.value
         of numberLiteral:
             prog = ast.value
+        of stringLiteral:
+            prog = "\""&ast.value&"\""
         of funcDef:
             prog = "function "
             for ch in ast.children:
                 prog = prog & nodeToLanguage(ch)
+        of printDef:
+            prog = "console.log("
+            for ch in ast.children:
+                prog = prog & nodeToLanguage(ch)
+            prog = prog & ");"
         of blockNodeDef:
             prog = "{"
             for ch in ast.children:
@@ -437,7 +444,7 @@ proc nodeToLanguage(ast:NodeRef):string=
             prog = "return "
             for ch in ast.children:
                 prog = prog & nodeToLanguage(ch)
-            prog = prog & ")"
+            prog = prog
         of funcIdentifierDef:
             prog = ast.value
         else:
@@ -459,6 +466,7 @@ proc astToLanguage(ast:NodeRef):string=
 proc main() =
     var
         fname = "./example/main.mole"
+        output = "./example/main.js"
 
     for line in lines fname:
         if line.isEmptyOrWhitespace():
@@ -469,7 +477,11 @@ proc main() =
             continue
         else:
             characterAnalyse(line)
+
     var ast = constructAST()
-    echo astToLanguage(ast)
+    var langOut = astToLanguage(ast)
+    var file_handle = syncio.open(output,FileMode.fmReadWrite)
+    syncio.write(file_handle, langOut)
+
 
 main()
